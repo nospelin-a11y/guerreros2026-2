@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { AppState, User, Activity } from '../types';
+import { AppState, User, Activity, Workout } from '../types';
+import { supabase } from '../services/supabase';
 import { 
   Users, 
   Zap, 
@@ -9,13 +10,14 @@ import {
   ShieldCheck,
   Edit2,
   Trash2,
-  Plus
+  Plus,
+  Loader2
 } from 'lucide-react';
 
 interface AdminPanelProps {
   state: AppState;
-  onUpdateActivities: (activities: Activity[]) => void;
-  onUpdateUsers: (users: User[]) => void;
+  onUpdateActivities: () => Promise<void>;
+  onUpdateUsers: () => Promise<void>;
   onAddWorkout: (workout: any) => Promise<void>;
 }
 
@@ -23,38 +25,46 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdateActivities, onUp
   const [activeSection, setActiveSection] = useState<'menu' | 'points' | 'users' | 'add_user' | 'add_workout'>('menu');
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
   const [editPointValue, setEditPointValue] = useState<string>('');
+  const [loading, setLoading] = useState(false);
   
   const [newUser, setNewUser] = useState({ name: '', username: '', password: '' });
   const [selectedUserForWorkout, setSelectedUserForWorkout] = useState<User | null>(null);
   const [selectedActId, setSelectedActId] = useState('');
 
-  const handleUpdatePoints = (id: string) => {
+  const handleUpdatePoints = async (id: string) => {
     const points = parseFloat(editPointValue);
     if (isNaN(points)) return;
     
-    const newActivities = state.activities.map(act => 
-      act.id === id ? { ...act, points } : act
-    );
-    
-    onUpdateActivities(newActivities);
-    setEditingActivityId(null);
+    setLoading(true);
+    const { error } = await supabase.from('activities').update({ points }).eq('id', id);
+    if (!error) {
+      await onUpdateActivities();
+      setEditingActivityId(null);
+    }
+    setLoading(false);
   };
 
-  const handleAddUser = (e: React.FormEvent) => {
+  const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUser.name || !newUser.username || !newUser.password) return;
     
-    const createdUser: User = {
+    setLoading(true);
+    const { error } = await supabase.from('users').insert([{
       id: `u-${Date.now()}`,
       name: newUser.name,
       username: newUser.username,
       password: newUser.password,
       is_admin: false
-    };
+    }]);
 
-    onUpdateUsers([...state.users, createdUser]);
-    setNewUser({ name: '', username: '', password: '' });
-    setActiveSection('users');
+    if (!error) {
+      await onUpdateUsers();
+      setNewUser({ name: '', username: '', password: '' });
+      setActiveSection('users');
+    } else {
+      alert("Error: " + error.message);
+    }
+    setLoading(false);
   };
 
   const handleAddExtraWorkout = async () => {
@@ -62,6 +72,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdateActivities, onUp
     const act = state.activities.find(a => a.id === selectedActId);
     if (!act) return;
 
+    setLoading(true);
     const newWorkout = {
       user_id: selectedUserForWorkout.id,
       activity_id: act.id,
@@ -71,54 +82,60 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdateActivities, onUp
     };
 
     await onAddWorkout(newWorkout);
+    setLoading(false);
     setActiveSection('users');
     setSelectedUserForWorkout(null);
     setSelectedActId('');
   };
 
-  const handleDeleteUser = (id: string) => {
+  const handleDeleteUser = async (id: string) => {
     if (confirm("¿Estás seguro de que quieres eliminar a este guerrero?")) {
-      onUpdateUsers(state.users.filter(u => u.id !== id));
+      setLoading(true);
+      const { error } = await supabase.from('users').delete().eq('id', id);
+      if (!error) await onUpdateUsers();
+      setLoading(false);
     }
   };
 
   const renderPoints = () => (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2 mb-4">
-        <button onClick={() => setActiveSection('menu')} className="text-slate-500 hover:text-white transition-colors">
-          Admin
-        </button>
-        <ChevronRight size={16} className="text-slate-700" />
-        <span className="text-white font-bold">Baremo de Puntos</span>
+    <div className="space-y-4 pb-20">
+      <div className="flex items-center gap-2 mb-4 px-2">
+        <button onClick={() => setActiveSection('menu')} className="text-slate-500 hover:text-white transition-colors text-xs font-bold uppercase tracking-widest">Admin</button>
+        <ChevronRight size={14} className="text-slate-700" />
+        <span className="text-white font-black uppercase text-[10px] tracking-widest">Baremo Puntos</span>
       </div>
-      
       {state.activities.map(act => (
-        <div key={act.id} className="glass rounded-3xl p-4 flex items-center justify-between">
+        <div key={act.id} className="glass rounded-[1.5rem] p-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-             <div className="w-10 h-10 rounded-2xl bg-orange-600/20 text-orange-500 flex items-center justify-center">
+             <div className="w-10 h-10 rounded-xl bg-orange-600/20 text-orange-500 flex items-center justify-center">
                <Zap size={20} />
              </div>
              <p className="font-bold text-slate-200 uppercase text-xs">{act.name}</p>
           </div>
-          
           {editingActivityId === act.id ? (
             <div className="flex items-center gap-2">
               <input 
                 type="number" 
-                step="0.05"
-                value={editPointValue}
+                step="0.05" 
+                value={editPointValue} 
                 onChange={(e) => setEditPointValue(e.target.value)}
                 className="w-16 bg-slate-900 border border-orange-600 rounded-xl px-2 py-1 text-white text-center text-xs"
                 autoFocus
               />
-              <button onClick={() => handleUpdatePoints(act.id)} className="bg-orange-600 p-2 rounded-xl">
-                <Save size={14} />
+              <button 
+                onClick={() => handleUpdatePoints(act.id)}
+                className="bg-orange-600 p-2 rounded-xl text-white"
+              >
+                {loading ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
               </button>
             </div>
           ) : (
             <div className="flex items-center gap-4">
-              <span className="font-black text-slate-200">{act.points} pts</span>
-              <button onClick={() => { setEditingActivityId(act.id); setEditPointValue(act.points.toString()); }} className="text-slate-600">
+              <span className="font-black text-slate-200 text-sm">{act.points} pts</span>
+              <button 
+                onClick={() => { setEditingActivityId(act.id); setEditPointValue(act.points.toString()); }}
+                className="text-slate-600 hover:text-orange-500 transition-colors"
+              >
                 <Edit2 size={16} />
               </button>
             </div>
@@ -129,49 +146,44 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdateActivities, onUp
   );
 
   const renderUsers = () => (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2 mb-4">
-        <button onClick={() => setActiveSection('menu')} className="text-slate-500 hover:text-white transition-colors">
-          Admin
-        </button>
-        <ChevronRight size={16} className="text-slate-700" />
-        <span className="text-white font-bold">Guerreros</span>
+    <div className="space-y-4 pb-20">
+      <div className="flex items-center gap-2 mb-4 px-2">
+        <button onClick={() => setActiveSection('menu')} className="text-slate-500 hover:text-white transition-colors text-xs font-bold uppercase tracking-widest">Admin</button>
+        <ChevronRight size={14} className="text-slate-700" />
+        <span className="text-white font-black uppercase text-[10px] tracking-widest">Guerreros</span>
       </div>
-
       <button 
         onClick={() => setActiveSection('add_user')}
-        className="w-full bg-orange-600 p-4 rounded-3xl flex items-center justify-center gap-3 text-white font-black uppercase tracking-widest text-xs"
+        className="w-full bg-orange-600 p-4 rounded-2xl flex items-center justify-center gap-3 text-white font-black uppercase tracking-widest text-xs shadow-lg shadow-orange-900/20"
       >
-        <UserPlus size={20} />
-        Añadir Guerrero
+        <UserPlus size={20} /> Añadir Guerrero
       </button>
-
       {state.users.map(u => (
-        <div key={u.id} className="glass rounded-3xl p-4 flex flex-col gap-4">
+        <div key={u.id} className="glass rounded-[2rem] p-5 flex flex-col gap-4">
            <div className="flex items-center justify-between">
              <div className="flex items-center gap-3">
-               <div className="w-10 h-10 rounded-2xl bg-slate-800 flex items-center justify-center text-slate-300 font-bold">
+               <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-slate-300 font-bold border border-slate-700">
                  {u.name.charAt(0)}
                </div>
                <div>
-                 <p className="font-bold text-slate-200 text-sm">{u.name}</p>
-                 <p className="text-[10px] text-slate-500 uppercase">@{u.username}</p>
+                 <p className="font-bold text-slate-200 text-sm uppercase">{u.name}</p>
+                 <p className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">@{u.username}</p>
                </div>
              </div>
              <div className="flex items-center gap-2">
                 {!u.is_admin && (
-                    <button onClick={() => handleDeleteUser(u.id)} className="p-2 text-red-500">
-                        <Trash2 size={18} />
-                    </button>
+                  <button onClick={() => handleDeleteUser(u.id)} className="p-2 text-slate-600 hover:text-red-500 transition-colors">
+                    <Trash2 size={18} />
+                  </button>
                 )}
                 {u.is_admin && <ShieldCheck size={18} className="text-orange-500" />}
              </div>
            </div>
            <button 
              onClick={() => { setSelectedUserForWorkout(u); setActiveSection('add_workout'); }}
-             className="w-full bg-slate-800/50 p-2 rounded-xl text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center justify-center gap-2"
+             className="w-full bg-slate-800/50 p-3 rounded-xl text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center justify-center gap-2 border border-slate-700/50 hover:bg-slate-800 transition-all"
            >
-             <Plus size={12} /> Añadir Entreno
+             <Plus size={12} /> Añadir Entreno Manual
            </button>
         </div>
       ))}
@@ -180,32 +192,51 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdateActivities, onUp
 
   const renderAddUser = () => (
     <div className="space-y-6">
-      <div className="flex items-center gap-2 mb-4">
-        <button onClick={() => setActiveSection('users')} className="text-slate-500 hover:text-white transition-colors">
-          Guerreros
-        </button>
-        <ChevronRight size={16} className="text-slate-700" />
-        <span className="text-white font-bold text-sm uppercase">Nuevo Perfil</span>
+      <div className="flex items-center gap-2 mb-4 px-2">
+        <button onClick={() => setActiveSection('users')} className="text-slate-500 hover:text-white transition-colors text-xs font-bold uppercase tracking-widest">Guerreros</button>
+        <ChevronRight size={14} className="text-slate-700" />
+        <span className="text-white font-black text-[10px] uppercase tracking-widest">Nuevo Perfil</span>
       </div>
-
-      <form onSubmit={handleAddUser} className="glass rounded-[2rem] p-6 space-y-4">
-        <input 
-          type="text" placeholder="Nombre completo" value={newUser.name}
-          onChange={(e) => setNewUser({...newUser, name: e.target.value})}
-          className="w-full bg-slate-900 border border-slate-800 rounded-2xl p-4 text-white text-sm" required
-        />
-        <input 
-          type="text" placeholder="Usuario" value={newUser.username}
-          onChange={(e) => setNewUser({...newUser, username: e.target.value})}
-          className="w-full bg-slate-900 border border-slate-800 rounded-2xl p-4 text-white text-sm" required
-        />
-        <input 
-          type="password" placeholder="Contraseña" value={newUser.password}
-          onChange={(e) => setNewUser({...newUser, password: e.target.value})}
-          className="w-full bg-slate-900 border border-slate-800 rounded-2xl p-4 text-white text-sm" required
-        />
-        <button type="submit" className="w-full bg-orange-600 h-14 rounded-2xl text-white font-black uppercase tracking-widest text-xs">
-          CREAR GUERRERO
+      <form onSubmit={handleAddUser} className="glass rounded-[2.5rem] p-8 space-y-4">
+        <div className="space-y-2">
+          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">Nombre</label>
+          <input 
+            type="text" 
+            placeholder="Ej: Carlos" 
+            value={newUser.name}
+            onChange={(e) => setNewUser({...newUser, name: e.target.value})}
+            className="w-full bg-slate-900 border border-slate-800 rounded-2xl p-4 text-white text-sm focus:outline-none focus:ring-1 focus:ring-orange-600"
+            required
+          />
+        </div>
+        <div className="space-y-2">
+          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">Usuario</label>
+          <input 
+            type="text" 
+            placeholder="Ej: carlitos" 
+            value={newUser.username}
+            onChange={(e) => setNewUser({...newUser, username: e.target.value})}
+            className="w-full bg-slate-900 border border-slate-800 rounded-2xl p-4 text-white text-sm focus:outline-none focus:ring-1 focus:ring-orange-600"
+            required
+          />
+        </div>
+        <div className="space-y-2">
+          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">Contraseña</label>
+          <input 
+            type="password" 
+            placeholder="••••••••" 
+            value={newUser.password}
+            onChange={(e) => setNewUser({...newUser, password: e.target.value})}
+            className="w-full bg-slate-900 border border-slate-800 rounded-2xl p-4 text-white text-sm focus:outline-none focus:ring-1 focus:ring-orange-600"
+            required
+          />
+        </div>
+        <button 
+          type="submit" 
+          disabled={loading}
+          className="w-full bg-orange-600 h-16 rounded-[1.5rem] text-white font-black uppercase tracking-[0.2em] text-xs shadow-xl shadow-orange-900/20 active:scale-95 transition-all mt-4"
+        >
+          {loading ? <Loader2 className="animate-spin mx-auto" /> : "CREAR GUERRERO"}
         </button>
       </form>
     </div>
@@ -213,22 +244,24 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdateActivities, onUp
 
   const renderAddWorkout = () => (
     <div className="space-y-6">
-      <div className="flex items-center gap-2 mb-4">
-        <button onClick={() => setActiveSection('users')} className="text-slate-500 hover:text-white transition-colors">
-          Guerreros
-        </button>
-        <ChevronRight size={16} className="text-slate-700" />
-        <span className="text-white font-bold">Entreno Extra</span>
+      <div className="flex items-center gap-2 mb-4 px-2">
+        <button onClick={() => setActiveSection('users')} className="text-slate-500 hover:text-white transition-colors text-xs font-bold uppercase tracking-widest">Guerreros</button>
+        <ChevronRight size={14} className="text-slate-700" />
+        <span className="text-white font-black uppercase text-[10px] tracking-widest">Entreno Extra</span>
       </div>
-
-      <div className="glass rounded-[2rem] p-6 space-y-6">
-        <p className="text-center text-xs font-bold text-slate-500 uppercase">Añadiendo a {selectedUserForWorkout?.name}</p>
+      <div className="glass rounded-[2.5rem] p-8 space-y-6">
+        <p className="text-center text-[10px] font-black text-slate-500 uppercase tracking-widest">
+          Asignando esfuerzo a <span className="text-orange-500">{selectedUserForWorkout?.name}</span>
+        </p>
         <div className="grid grid-cols-2 gap-3">
           {state.activities.map(act => (
             <button
-              key={act.id} onClick={() => setSelectedActId(act.id)}
+              key={act.id}
+              onClick={() => setSelectedActId(act.id)}
               className={`p-4 rounded-2xl border-2 text-[10px] font-bold uppercase transition-all ${
-                selectedActId === act.id ? 'border-orange-600 bg-orange-600/10 text-orange-500' : 'border-slate-800 bg-slate-900/50 text-slate-500'
+                selectedActId === act.id 
+                ? 'border-orange-600 bg-orange-600/10 text-orange-500' 
+                : 'border-slate-800 bg-slate-900/50 text-slate-500 hover:border-slate-700'
               }`}
             >
               {act.name}
@@ -236,10 +269,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdateActivities, onUp
           ))}
         </div>
         <button 
-          onClick={handleAddExtraWorkout} disabled={!selectedActId}
-          className="w-full h-14 rounded-2xl bg-orange-600 text-white font-black uppercase tracking-widest text-xs disabled:opacity-50"
+          onClick={handleAddExtraWorkout}
+          disabled={!selectedActId || loading}
+          className="w-full h-16 rounded-[1.5rem] bg-orange-600 text-white font-black uppercase tracking-[0.2em] text-xs shadow-xl shadow-orange-900/20 disabled:opacity-50 active:scale-95 transition-all"
         >
-          CONFIRMAR
+          {loading ? <Loader2 className="animate-spin mx-auto" /> : "ASIGNAR PUNTOS"}
         </button>
       </div>
     </div>
@@ -253,19 +287,35 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdateActivities, onUp
   return (
     <div className="space-y-6">
       <div className="text-center">
-        <h2 className="text-2xl font-black text-white uppercase italic tracking-wider">Centro de Control</h2>
-        <p className="text-slate-500 text-sm">Configuración de la Legión</p>
+        <h2 className="text-2xl font-black text-white uppercase italic tracking-wider leading-none mb-2">Centro de Control</h2>
+        <p className="text-slate-500 text-[10px] uppercase tracking-[0.3em] font-black">Modo Administrador</p>
       </div>
       <div className="grid grid-cols-1 gap-4">
-        <button onClick={() => setActiveSection('points')} className="glass rounded-[2rem] p-8 flex items-center gap-6 group hover:bg-slate-800/50">
-          <div className="w-14 h-14 rounded-2xl bg-orange-600 flex items-center justify-center text-white"><Zap size={28} /></div>
-          <div><h3 className="text-lg font-black text-white uppercase italic">Baremo Puntos</h3><p className="text-slate-500 text-xs">Valores de esfuerzo</p></div>
-          <ChevronRight className="ml-auto text-slate-700" />
+        <button 
+          onClick={() => setActiveSection('points')}
+          className="glass rounded-[2.5rem] p-8 flex items-center gap-6 group hover:bg-slate-800/30 transition-all active:scale-95"
+        >
+          <div className="w-14 h-14 rounded-[1.25rem] bg-orange-600 flex items-center justify-center text-white shadow-lg shadow-orange-900/20">
+            <Zap size={28} />
+          </div>
+          <div className="text-left">
+            <h3 className="text-lg font-black text-white uppercase italic leading-none mb-1">Baremo Puntos</h3>
+            <p className="text-slate-500 text-[9px] uppercase tracking-widest font-black">Configurar esfuerzos</p>
+          </div>
+          <ChevronRight className="ml-auto text-slate-700 group-hover:text-orange-500 transition-colors" />
         </button>
-        <button onClick={() => setActiveSection('users')} className="glass rounded-[2rem] p-8 flex items-center gap-6 group hover:bg-slate-800/50">
-          <div className="w-14 h-14 rounded-2xl bg-slate-800 flex items-center justify-center text-slate-300"><Users size={28} /></div>
-          <div><h3 className="text-lg font-black text-white uppercase italic">Guerreros</h3><p className="text-slate-500 text-xs">Gestión de miembros</p></div>
-          <ChevronRight className="ml-auto text-slate-700" />
+        <button 
+          onClick={() => setActiveSection('users')}
+          className="glass rounded-[2.5rem] p-8 flex items-center gap-6 group hover:bg-slate-800/30 transition-all active:scale-95"
+        >
+          <div className="w-14 h-14 rounded-[1.25rem] bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300">
+            <Users size={28} />
+          </div>
+          <div className="text-left">
+            <h3 className="text-lg font-black text-white uppercase italic leading-none mb-1">Guerreros</h3>
+            <p className="text-slate-500 text-[9px] uppercase tracking-widest font-black">Gestionar la legión</p>
+          </div>
+          <ChevronRight className="ml-auto text-slate-700 group-hover:text-orange-500 transition-colors" />
         </button>
       </div>
     </div>
