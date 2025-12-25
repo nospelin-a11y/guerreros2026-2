@@ -239,7 +239,13 @@ CREATE POLICY "public_delete_workouts" ON workouts FOR DELETE TO anon USING (tru
       {activeTab === 'history' && <HistoryView state={state} user={currentUser} onDelete={currentUser.is_admin ? deleteWorkout : undefined} />}
       {activeTab === 'profile' && <ProfileView user={currentUser} onUpdate={updateProfile} />}
       {activeTab === 'admin' && currentUser.is_admin && (
-        <AdminPanel state={state} onUpdateActivities={fetchData} onUpdateUsers={fetchData} onAddWorkout={addWorkout} />
+        <AdminPanel 
+          state={state} 
+          onUpdateActivities={fetchData} 
+          onUpdateUsers={fetchData} 
+          onAddWorkout={addWorkout} 
+          onDeleteWorkout={deleteWorkout}
+        />
       )}
     </Layout>
   );
