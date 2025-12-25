@@ -3,13 +3,13 @@ import React, { useState, useMemo } from 'react';
 import { Activity, User, Workout } from '../types';
 import { DAILY_WORKOUT_LIMIT } from '../constants';
 import { isToday, parseISO } from 'date-fns';
-import { Check, Plus, AlertCircle, Dumbbell } from 'lucide-react';
+import { Check, AlertCircle, Dumbbell } from 'lucide-react';
 
 interface RegisterWorkoutProps {
   activities: Activity[];
   user: User;
   workouts: Workout[];
-  onAdd: (workout: Workout) => void;
+  onAdd: (workout: any) => Promise<void>;
 }
 
 const RegisterWorkout: React.FC<RegisterWorkoutProps> = ({ activities, user, workouts, onAdd }) => {
@@ -17,12 +17,12 @@ const RegisterWorkout: React.FC<RegisterWorkoutProps> = ({ activities, user, wor
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const workoutsTodayCount = useMemo(() => 
-    workouts.filter(w => w.userId === user.id && isToday(parseISO(w.date))).length,
+    workouts.filter(w => (w.userId === user.id || (w as any).user_id === user.id) && isToday(parseISO(w.date))).length,
   [workouts, user.id]);
 
   const canAddMore = workoutsTodayCount < DAILY_WORKOUT_LIMIT;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canAddMore) return;
 
@@ -31,20 +31,16 @@ const RegisterWorkout: React.FC<RegisterWorkoutProps> = ({ activities, user, wor
 
     setIsSubmitting(true);
     
-    // Simulate slight delay for effect
-    setTimeout(() => {
-      const newWorkout: Workout = {
-        id: Math.random().toString(36).substr(2, 9),
-        userId: user.id,
-        activityId: activity.id,
-        activityName: activity.name,
-        date: new Date().toISOString(),
-        points: activity.points
-      };
-      
-      onAdd(newWorkout);
-      setIsSubmitting(false);
-    }, 600);
+    const newWorkout = {
+      user_id: user.id,
+      activity_id: activity.id,
+      activity_name: activity.name,
+      points: activity.points,
+      date: new Date().toISOString()
+    };
+    
+    await onAdd(newWorkout);
+    setIsSubmitting(false);
   };
 
   return (

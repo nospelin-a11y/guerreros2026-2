@@ -2,7 +2,7 @@
 {
   "name": "guerreros-2026",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,6 +14,7 @@
     "react-dom": "^19.0.0",
     "lucide-react": "^0.462.0",
     "date-fns": "^4.1.0",
+    "@supabase/supabase-js": "^2.45.0",
     "clsx": "^2.1.1",
     "tailwind-merge": "^2.5.4"
   },

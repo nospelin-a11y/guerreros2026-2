@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { AppState, User, Activity, Workout } from '../types';
+import { supabase } from '../services/supabase';
 import { 
   Settings, 
   Users, 
@@ -19,79 +20,83 @@ interface AdminPanelProps {
   state: AppState;
   onUpdateActivities: (activities: Activity[]) => void;
   onUpdateUsers: (users: User[]) => void;
-  onAddWorkout: (workout: Workout) => void;
+  onAddWorkout: (workout: any) => void;
 }
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdateActivities, onUpdateUsers, onAddWorkout }) => {
   const [activeSection, setActiveSection] = useState<'menu' | 'points' | 'users' | 'add_user' | 'add_workout'>('menu');
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
   const [editPointValue, setEditPointValue] = useState<string>('');
+  const [isSyncing, setIsSyncing] = useState(false);
   
-  // Add User Form State
   const [newUser, setNewUser] = useState({ name: '', username: '', password: '' });
-  
-  // Add Workout Form State
   const [selectedUserForWorkout, setSelectedUserForWorkout] = useState<User | null>(null);
   const [selectedActId, setSelectedActId] = useState('');
 
-  const handleUpdatePoints = (id: string) => {
+  const handleUpdatePoints = async (id: string) => {
     const points = parseFloat(editPointValue);
     if (isNaN(points)) return;
     
-    const newActivities = state.activities.map(a => 
-      a.id === id ? { ...a, points } : a
-    );
-    onUpdateActivities(newActivities);
-    setEditingActivityId(null);
+    setIsSyncing(true);
+    const { error } = await supabase
+        .from('activities')
+        .update({ points })
+        .eq('id', id);
+
+    if (!error) {
+        onUpdateActivities([]); // El refresh lo maneja App.tsx llamando a fetchData
+        setEditingActivityId(null);
+    }
+    setIsSyncing(false);
   };
 
-  const handleAddUser = (e: React.FormEvent) => {
+  const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUser.name || !newUser.username || !newUser.password) return;
     
-    const userExists = state.users.find(u => u.username === newUser.username);
-    if (userExists) {
-        alert("El nombre de usuario ya existe");
-        return;
+    setIsSyncing(true);
+    const { error } = await supabase
+        .from('users')
+        .insert([{ ...newUser, is_admin: false }]);
+
+    if (error) {
+        alert("Error al crear usuario. Posiblemente el username ya existe.");
+    } else {
+        onUpdateUsers([]); 
+        setNewUser({ name: '', username: '', password: '' });
+        setActiveSection('users');
     }
-
-    const created: User = {
-      id: Math.random().toString(36).substr(2, 9),
-      name: newUser.name,
-      username: newUser.username,
-      password: newUser.password,
-      isAdmin: false
-    };
-
-    onUpdateUsers([...state.users, created]);
-    setNewUser({ name: '', username: '', password: '' });
-    setActiveSection('users');
+    setIsSyncing(false);
   };
 
-  const handleAddExtraWorkout = () => {
+  const handleAddExtraWorkout = async () => {
     if (!selectedUserForWorkout || !selectedActId) return;
     const act = state.activities.find(a => a.id === selectedActId);
     if (!act) return;
 
-    const newWorkout: Workout = {
-      id: Math.random().toString(36).substr(2, 9),
-      userId: selectedUserForWorkout.id,
-      activityId: act.id,
-      activityName: act.name,
-      date: new Date().toISOString(),
-      points: act.points
+    setIsSyncing(true);
+    const newWorkout = {
+      user_id: selectedUserForWorkout.id,
+      activity_id: act.id,
+      activity_name: act.name,
+      points: act.points,
+      date: new Date().toISOString()
     };
 
-    onAddWorkout(newWorkout);
+    await onAddWorkout(newWorkout);
     alert(`Entreno añadido a ${selectedUserForWorkout.name}`);
     setActiveSection('users');
     setSelectedUserForWorkout(null);
     setSelectedActId('');
+    setIsSyncing(false);
   };
 
-  const handleDeleteUser = (id: string) => {
+  const handleDeleteUser = async (id: string) => {
     if (confirm("¿Estás seguro de que quieres eliminar a este guerrero? Se perderán sus datos.")) {
-        onUpdateUsers(state.users.filter(u => u.id !== id));
+        setIsSyncing(true);
+        const { error } = await supabase.from('users').delete().eq('id', id);
+        if (!error) onUpdateUsers([]);
+        setIsSyncing(false);
     }
   };
 
@@ -128,7 +133,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdateActivities, onUp
               />
               <button 
                 onClick={() => handleUpdatePoints(act.id)}
-                className="bg-orange-600 p-2 rounded-xl text-white"
+                disabled={isSyncing}
+                className="bg-orange-600 p-2 rounded-xl text-white disabled:opacity-50"
               >
                 <Save size={18} />
               </button>
@@ -184,7 +190,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdateActivities, onUp
                 {!u.isAdmin && (
                     <button 
                         onClick={() => handleDeleteUser(u.id)}
-                        className="p-2 bg-red-500/10 text-red-500 rounded-xl hover:bg-red-500/20"
+                        disabled={isSyncing}
+                        className="p-2 bg-red-500/10 text-red-500 rounded-xl hover:bg-red-500/20 disabled:opacity-50"
                     >
                         <Trash2 size={18} />
                     </button>
@@ -256,9 +263,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdateActivities, onUp
         </div>
         <button 
           type="submit"
-          className="w-full bg-orange-600 h-14 rounded-2xl text-white font-black uppercase tracking-widest mt-4 shadow-xl shadow-orange-900/20 active:scale-95 transition-all"
+          disabled={isSyncing}
+          className="w-full bg-orange-600 h-14 rounded-2xl text-white font-black uppercase tracking-widest mt-4 shadow-xl shadow-orange-900/20 active:scale-95 transition-all disabled:opacity-50"
         >
-          CREAR GUERRERO
+          {isSyncing ? 'CREANDO...' : 'CREAR GUERRERO'}
         </button>
       </form>
     </div>
@@ -300,12 +308,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdateActivities, onUp
 
         <button 
           onClick={handleAddExtraWorkout}
-          disabled={!selectedActId}
+          disabled={!selectedActId || isSyncing}
           className={`w-full h-14 rounded-2xl font-black uppercase tracking-widest mt-4 shadow-xl transition-all ${
             selectedActId ? 'bg-orange-600 text-white shadow-orange-900/20 active:scale-95' : 'bg-slate-800 text-slate-600'
-          }`}
+          } disabled:opacity-50`}
         >
-          CONFIRMAR ENTRENO
+          {isSyncing ? 'CONFIRMANDO...' : 'CONFIRMAR ENTRENO'}
         </button>
       </div>
     </div>
@@ -351,17 +359,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdateActivities, onUp
           </div>
           <ChevronRight className="ml-auto text-slate-700" size={24} />
         </button>
-      </div>
-
-      <div className="mt-8 p-6 glass rounded-3xl bg-orange-500/5 border-orange-500/10">
-        <div className="flex items-center gap-3 mb-2">
-          <Settings className="text-orange-500" size={20} />
-          <h4 className="font-black text-slate-200 uppercase text-sm">Info Sistema</h4>
-        </div>
-        <p className="text-xs text-slate-500 leading-relaxed uppercase font-bold">
-          Versión 1.1.0 "Legión" <br/>
-          Control total habilitado para el administrador.
-        </p>
       </div>
     </div>
   );

@@ -1,8 +1,7 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, Workout, Activity, AppState } from './types';
-import { loadState, saveState } from './services/storage';
-import { DAILY_WORKOUT_LIMIT } from './constants';
+import { supabase } from './services/supabase';
 import Layout from './components/Layout';
 import Dashboard from './views/Dashboard';
 import Ranking from './views/Ranking';
@@ -11,28 +10,45 @@ import HistoryView from './views/HistoryView';
 import AdminPanel from './views/AdminPanel';
 import Login from './views/Login';
 import ProfileView from './views/ProfileView';
+import { Loader2, Trophy } from 'lucide-react';
 
 const App: React.FC = () => {
-  const [state, setState] = useState<AppState>(loadState());
+  const [state, setState] = useState<AppState>({ users: [], workouts: [], activities: [] });
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [isInitialized, setIsInitialized] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  // Persistence
+  // Carga inicial de datos desde Supabase
+  const fetchData = async () => {
+    try {
+      const { data: users } = await supabase.from('users').select('*');
+      const { data: activities } = await supabase.from('activities').select('*').order('name');
+      const { data: workouts } = await supabase.from('workouts').select('*').order('date', { ascending: false });
+
+      setState({
+        users: users || [],
+        activities: activities || [],
+        workouts: workouts || []
+      });
+    } catch (error) {
+      console.error("Error cargando datos:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    saveState(state);
-  }, [state]);
+    fetchData();
+  }, []);
 
-  // Handle Login session
+  // Gestionar sesión local
   useEffect(() => {
     const savedUser = localStorage.getItem('guerreros_session');
-    if (savedUser) {
+    if (savedUser && state.users.length > 0) {
       const parsed = JSON.parse(savedUser);
-      // Sync with latest state
       const actualUser = state.users.find(u => u.id === parsed.id);
       if (actualUser) setCurrentUser(actualUser);
     }
-    setIsInitialized(true);
   }, [state.users]);
 
   const handleLogin = (user: User) => {
@@ -46,46 +62,71 @@ const App: React.FC = () => {
     setActiveTab('dashboard');
   };
 
-  const addWorkout = (workout: Workout) => {
-    setState(prev => ({
-      ...prev,
-      workouts: [workout, ...prev.workouts]
-    }));
-    setActiveTab('dashboard');
+  const addWorkout = async (workout: Omit<Workout, 'id'>) => {
+    const { data, error } = await supabase
+      .from('workouts')
+      .insert([workout])
+      .select();
+
+    if (!error && data) {
+      setState(prev => ({
+        ...prev,
+        workouts: [data[0], ...prev.workouts]
+      }));
+      setActiveTab('dashboard');
+    }
   };
 
-  const addAdminWorkout = (workout: Workout) => {
-    setState(prev => ({
-      ...prev,
-      workouts: [workout, ...prev.workouts]
-    }));
+  const deleteWorkout = async (id: string) => {
+    const { error } = await supabase.from('workouts').delete().eq('id', id);
+    if (!error) {
+      setState(prev => ({
+        ...prev,
+        workouts: prev.workouts.filter(w => w.id !== id)
+      }));
+    }
   };
 
-  const deleteWorkout = (id: string) => {
-    setState(prev => ({
-      ...prev,
-      workouts: prev.workouts.filter(w => w.id !== id)
-    }));
+  const updateProfile = async (updatedUser: User) => {
+    const { error } = await supabase
+      .from('users')
+      .update({ 
+        avatar: updatedUser.avatar, 
+        password: updatedUser.password 
+      })
+      .eq('id', updatedUser.id);
+
+    if (!error) {
+      setState(prev => ({
+        ...prev,
+        users: prev.users.map(u => u.id === updatedUser.id ? updatedUser : u)
+      }));
+      setCurrentUser(updatedUser);
+      localStorage.setItem('guerreros_session', JSON.stringify(updatedUser));
+    }
   };
 
-  const updateActivities = (activities: Activity[]) => {
-    setState(prev => ({ ...prev, activities }));
+  const adminUpdateUsers = async (users: User[]) => {
+    // Para simplificar, refrescamos todo el estado de usuarios
+    fetchData();
   };
 
-  const updateUsers = (users: User[]) => {
-    setState(prev => ({ ...prev, users }));
+  const adminUpdateActivities = async (activities: Activity[]) => {
+    // Lógica para actualizar actividades una a una o refrescar
+    fetchData();
   };
 
-  const updateProfile = (updatedUser: User) => {
-    setState(prev => ({
-      ...prev,
-      users: prev.users.map(u => u.id === updatedUser.id ? updatedUser : u)
-    }));
-    setCurrentUser(updatedUser);
-    localStorage.setItem('guerreros_session', JSON.stringify(updatedUser));
-  };
-
-  if (!isInitialized) return <div className="min-h-screen bg-slate-950"></div>;
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center">
+        <div className="relative">
+            <Trophy className="text-orange-600 animate-pulse" size={64} />
+            <Loader2 className="absolute -bottom-10 left-1/2 -translate-x-1/2 text-slate-700 animate-spin" size={24} />
+        </div>
+        <p className="mt-16 text-slate-500 font-black uppercase tracking-[0.3em] text-xs">Sincronizando Legión...</p>
+      </div>
+    );
+  }
 
   if (!currentUser) {
     return <Login users={state.users} onLogin={handleLogin} />;
@@ -120,9 +161,9 @@ const App: React.FC = () => {
         return currentUser.isAdmin ? (
           <AdminPanel 
             state={state} 
-            onUpdateActivities={updateActivities} 
-            onUpdateUsers={updateUsers}
-            onAddWorkout={addAdminWorkout}
+            onUpdateActivities={adminUpdateActivities} 
+            onUpdateUsers={adminUpdateUsers}
+            onAddWorkout={addWorkout}
           />
         ) : null;
       default:
