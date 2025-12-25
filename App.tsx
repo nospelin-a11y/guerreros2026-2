@@ -10,7 +10,7 @@ import HistoryView from './views/HistoryView';
 import AdminPanel from './views/AdminPanel';
 import Login from './views/Login';
 import ProfileView from './views/ProfileView';
-import { Trophy, Loader2, Database, CloudAlert } from 'lucide-react';
+import { Trophy, Loader2, Database, AlertCircle, RefreshCw, Terminal, Copy, Check } from 'lucide-react';
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({ users: [], workouts: [], activities: [] });
@@ -18,8 +18,8 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showSqlGuide, setShowSqlGuide] = useState(false);
 
-  // Cargar datos de Supabase
   const fetchData = async () => {
     try {
       setLoading(true);
@@ -27,7 +27,7 @@ const App: React.FC = () => {
       
       const [usersRes, activitiesRes, workoutsRes] = await Promise.all([
         supabase.from('users').select('*'),
-        supabase.from('activities').select('*').order('name'),
+        supabase.from('activities').select('*'),
         supabase.from('workouts').select('*').order('date', { ascending: false })
       ]);
 
@@ -37,12 +37,13 @@ const App: React.FC = () => {
 
       setState({
         users: usersRes.data || [],
-        activities: activitiesRes.data || [],
+        activities: (activitiesRes.data || []).sort((a, b) => (a.name || '').localeCompare(b.name || '')),
         workouts: workoutsRes.data || []
       });
     } catch (err: any) {
-      console.error("Error al sincronizar con Supabase:", err.message);
-      setError(err.message);
+      console.error("Supabase Error:", err);
+      const message = err.message || err.details || (typeof err === 'object' ? JSON.stringify(err) : String(err));
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -52,7 +53,6 @@ const App: React.FC = () => {
     fetchData();
   }, []);
 
-  // Gestionar sesión local
   useEffect(() => {
     const savedUser = localStorage.getItem('guerreros_session');
     if (savedUser && state.users.length > 0) {
@@ -77,114 +77,159 @@ const App: React.FC = () => {
     setActiveTab('dashboard');
   };
 
-  // Acción: Inicializar base de datos si está vacía
   const seedDatabase = async () => {
     try {
       setLoading(true);
-      // Insertar usuarios y actividades iniciales
+      setError(null);
       const { error: uErr } = await supabase.from('users').upsert(INITIAL_USERS);
       const { error: aErr } = await supabase.from('activities').upsert(INITIAL_ACTIVITIES);
-      
-      if (uErr || aErr) throw new Error("No se pudo inicializar la base de datos.");
-      
+      if (uErr || aErr) throw uErr || aErr;
       await fetchData();
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || "No se pudieron crear las tablas. ¿Has ejecutado el SQL en Supabase?");
     } finally {
       setLoading(false);
     }
   };
 
-  // Acción: Añadir entrenamiento
   const addWorkout = async (workout: any) => {
     try {
-      const { data, error: wErr } = await supabase
-        .from('workouts')
-        .insert([workout])
-        .select();
-
+      const { data, error: wErr } = await supabase.from('workouts').insert([workout]).select();
       if (wErr) throw wErr;
-      
       if (data) {
-        setState(prev => ({
-          ...prev,
-          workouts: [data[0] as Workout, ...prev.workouts]
-        }));
+        setState(prev => ({ ...prev, workouts: [data[0] as Workout, ...prev.workouts] }));
         setActiveTab('dashboard');
       }
     } catch (err: any) {
-      alert("Error al registrar: " + err.message);
+      alert("Error: " + (err.message || "Error al registrar"));
     }
   };
 
-  // Acción: Eliminar entrenamiento (solo Admin)
   const deleteWorkout = async (id: string) => {
     const { error: dErr } = await supabase.from('workouts').delete().eq('id', id);
     if (!dErr) {
-      setState(prev => ({
-        ...prev,
-        workouts: prev.workouts.filter(w => w.id !== id)
-      }));
+      setState(prev => ({ ...prev, workouts: prev.workouts.filter(w => w.id !== id) }));
     }
   };
 
-  // Acción: Actualizar perfil (Avatar/Password)
   const updateProfile = async (updatedUser: User) => {
     const { error: pErr } = await supabase
       .from('users')
       .update({ avatar: updatedUser.avatar, password: updatedUser.password })
       .eq('id', updatedUser.id);
-
     if (!pErr) {
-      setState(prev => ({
-        ...prev,
-        users: prev.users.map(u => u.id === updatedUser.id ? updatedUser : u)
-      }));
+      setState(prev => ({ ...prev, users: prev.users.map(u => u.id === updatedUser.id ? updatedUser : u) }));
       setCurrentUser(updatedUser);
       localStorage.setItem('guerreros_session', JSON.stringify(updatedUser));
     }
   };
 
-  // Pantalla de Carga
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-center p-6">
         <Trophy className="text-orange-600 animate-pulse mb-8" size={64} />
         <Loader2 className="text-slate-700 animate-spin mb-4" size={24} />
-        <p className="text-slate-500 font-black uppercase tracking-widest text-[10px]">Sincronizando con Supabase...</p>
+        <p className="text-slate-500 font-black uppercase tracking-widest text-[10px]">Conectando Legión...</p>
       </div>
     );
   }
 
-  // Pantalla de Error o BD Vacía
-  if (error || state.users.length === 0) {
+  if (error || state.users.length === 0 || showSqlGuide) {
+    const sqlScript = `-- 1. CREAR TABLAS (ID de usuario es su NOMBRE)
+CREATE TABLE users (
+  id TEXT PRIMARY KEY, -- Almacenará el NOMBRE del usuario
+  name TEXT NOT NULL,
+  username TEXT NOT NULL UNIQUE,
+  password TEXT NOT NULL,
+  is_admin BOOLEAN DEFAULT false,
+  avatar TEXT
+);
+
+CREATE TABLE activities (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  points NUMERIC NOT NULL
+);
+
+CREATE TABLE workouts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id TEXT REFERENCES users(id), -- Almacenará el NOMBRE del usuario
+  activity_id TEXT REFERENCES activities(id),
+  activity_name TEXT NOT NULL,
+  points NUMERIC NOT NULL,
+  date TIMESTAMPTZ DEFAULT now()
+);
+
+-- 2. HABILITAR RLS Y CREAR POLÍTICAS
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE activities ENABLE ROW LEVEL SECURITY;
+ALTER TABLE workouts ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "public_read_users" ON users FOR SELECT TO anon USING (true);
+CREATE POLICY "public_write_users" ON users FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "public_update_users" ON users FOR UPDATE TO anon USING (true);
+
+CREATE POLICY "public_read_activities" ON activities FOR SELECT TO anon USING (true);
+CREATE POLICY "public_write_activities" ON activities FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "public_update_activities" ON activities FOR UPDATE TO anon USING (true);
+
+CREATE POLICY "public_read_workouts" ON workouts FOR SELECT TO anon USING (true);
+CREATE POLICY "public_write_workouts" ON workouts FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "public_delete_workouts" ON workouts FOR DELETE TO anon USING (true);`;
+
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-center p-10">
-        <div className="w-20 h-20 rounded-[2.5rem] bg-orange-600/10 flex items-center justify-center text-orange-600 mb-8 border border-orange-600/20 shadow-2xl">
-          <Database size={40} />
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 overflow-y-auto">
+        <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-[2.5rem] p-8 shadow-2xl">
+          <div className="flex justify-center mb-6">
+            <div className="w-16 h-16 rounded-2xl bg-orange-600/10 flex items-center justify-center text-orange-600 border border-orange-600/20">
+              <Database size={32} />
+            </div>
+          </div>
+          
+          <h2 className="text-xl font-black text-white uppercase italic text-center mb-2">Configura Supabase</h2>
+          <p className="text-slate-500 text-[10px] uppercase font-black tracking-widest text-center mb-6 leading-relaxed">
+            Ejecuta este SQL en el panel de Supabase. El user_id ahora será el nombre del usuario.
+          </p>
+
+          <div className="relative group mb-6">
+            <pre className="bg-slate-950 p-4 rounded-2xl text-[9px] font-mono text-slate-400 overflow-x-auto border border-slate-800 h-60 scrollbar-hide">
+              {sqlScript}
+            </pre>
+            <button 
+              onClick={() => { navigator.clipboard.writeText(sqlScript); alert('¡Copiado!'); }}
+              className="absolute top-2 right-2 p-2 bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-all"
+            >
+              <Copy size={14} />
+            </button>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <button 
+              onClick={seedDatabase} 
+              className="w-full h-14 bg-orange-600 rounded-2xl text-white font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 shadow-xl shadow-orange-900/20 active:scale-95 transition-all"
+            >
+              <Check size={16} /> YA HE EJECUTADO EL SQL
+            </button>
+            <button 
+              onClick={fetchData} 
+              className="w-full h-14 bg-slate-800 rounded-2xl text-slate-400 font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all"
+            >
+              REINTENTAR CONEXIÓN
+            </button>
+          </div>
+
+          {error && (
+            <div className="mt-6 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-start gap-3">
+              <AlertCircle size={16} className="text-red-500 shrink-0 mt-0.5" />
+              <p className="text-[10px] font-mono text-red-400 break-all">{error}</p>
+            </div>
+          )}
         </div>
-        <h2 className="text-2xl font-black text-white italic uppercase mb-2 leading-tight">Legión en espera</h2>
-        <p className="text-slate-500 text-xs uppercase tracking-widest mb-10 leading-relaxed max-w-xs mx-auto font-bold">
-          {error ? `Error: ${error}` : "La base de datos está conectada pero vacía. Vamos a reclutar a los guerreros."}
-        </p>
-        <button 
-          onClick={seedDatabase} 
-          className="w-full max-w-xs h-16 bg-orange-600 rounded-3xl text-white font-black text-[10px] uppercase tracking-[0.2em] shadow-xl shadow-orange-900/20 active:scale-95 transition-all"
-        >
-          INICIALIZAR GUERREROS
-        </button>
-        {error && (
-          <button onClick={() => window.location.reload()} className="mt-6 text-slate-600 text-[10px] font-black uppercase tracking-widest underline decoration-slate-800 underline-offset-4">
-            Reintentar Conexión
-          </button>
-        )}
       </div>
     );
   }
 
-  if (!currentUser) {
-    return <Login users={state.users} onLogin={handleLogin} />;
-  }
+  if (!currentUser) return <Login users={state.users} onLogin={handleLogin} />;
 
   return (
     <Layout activeTab={activeTab} setActiveTab={setActiveTab} user={currentUser} onLogout={handleLogout}>
@@ -194,12 +239,7 @@ const App: React.FC = () => {
       {activeTab === 'history' && <HistoryView state={state} user={currentUser} onDelete={currentUser.is_admin ? deleteWorkout : undefined} />}
       {activeTab === 'profile' && <ProfileView user={currentUser} onUpdate={updateProfile} />}
       {activeTab === 'admin' && currentUser.is_admin && (
-        <AdminPanel 
-          state={state} 
-          onUpdateActivities={fetchData} 
-          onUpdateUsers={fetchData} 
-          onAddWorkout={addWorkout} 
-        />
+        <AdminPanel state={state} onUpdateActivities={fetchData} onUpdateUsers={fetchData} onAddWorkout={addWorkout} />
       )}
     </Layout>
   );

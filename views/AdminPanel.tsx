@@ -49,8 +49,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdateActivities, onUp
     if (!newUser.name || !newUser.username || !newUser.password) return;
     
     setLoading(true);
+    // user_id tiene que ser el nombre del usuario, por lo tanto usamos name como ID
     const { error } = await supabase.from('users').insert([{
-      id: `u-${Date.now()}`,
+      id: newUser.name, 
       name: newUser.name,
       username: newUser.username,
       password: newUser.password,
@@ -74,7 +75,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdateActivities, onUp
 
     setLoading(true);
     const newWorkout = {
-      user_id: selectedUserForWorkout.id,
+      user_id: selectedUserForWorkout.id, // Esto ahora es el nombre del usuario
       activity_id: act.id,
       activity_name: act.name,
       points: act.points,
