@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, Workout, Activity, AppState } from './types';
 import { supabase } from './services/supabase';
+import { INITIAL_USERS, INITIAL_ACTIVITIES } from './constants';
 import Layout from './components/Layout';
 import Dashboard from './views/Dashboard';
 import Ranking from './views/Ranking';
@@ -16,28 +17,64 @@ const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [loading, setLoading] = useState(true);
+  const [initializing, setInitializing] = useState(false);
 
-  // Función para cargar todos los datos de Supabase
+  // Función para poblar la base de datos si está vacía
+  const initializeDatabase = async (currentUsers: any[], currentActivities: any[]) => {
+    if (currentUsers.length === 0 || currentActivities.length === 0) {
+      setInitializing(true);
+      console.log("Detectada base de datos vacía. Iniciando carga automática...");
+      
+      try {
+        if (currentUsers.length === 0) {
+          await supabase.from('users').insert(INITIAL_USERS);
+        }
+        if (currentActivities.length === 0) {
+          await supabase.from('activities').insert(INITIAL_ACTIVITIES);
+        }
+        // Recargar después de insertar
+        await fetchData();
+      } catch (err) {
+        console.error("Error en inicialización:", err);
+      } finally {
+        setInitializing(false);
+      }
+    }
+  };
+
   const fetchData = async () => {
     try {
       const { data: users } = await supabase.from('users').select('*');
       const { data: activities } = await supabase.from('activities').select('*').order('name');
       const { data: workouts } = await supabase.from('workouts').select('*').order('date', { ascending: false });
 
+      const fetchedUsers = users || [];
+      const fetchedActivities = activities || [];
+      
       setState({
-        users: users || [],
-        activities: activities || [],
+        users: fetchedUsers,
+        activities: fetchedActivities,
         workouts: workouts || []
       });
+
+      return { users: fetchedUsers, activities: fetchedActivities };
     } catch (error) {
       console.error("Error cargando datos de Supabase:", error);
-    } finally {
-      setLoading(false);
+      return { users: [], activities: [] };
     }
   };
 
   useEffect(() => {
-    fetchData();
+    const startApp = async () => {
+      setLoading(true);
+      const data = await fetchData();
+      // Si no hay datos, intentamos inicializar
+      if (data.users.length === 0 || data.activities.length === 0) {
+        await initializeDatabase(data.users, data.activities);
+      }
+      setLoading(false);
+    };
+    startApp();
   }, []);
 
   // Manejo de sesión local persistente
@@ -79,7 +116,7 @@ const App: React.FC = () => {
       setActiveTab('dashboard');
     } else {
       console.error("Error insertando entreno:", error);
-      alert("Error al guardar en la nube");
+      alert("Error al guardar en la nube. Revisa las políticas RLS en Supabase.");
     }
   };
 
@@ -112,12 +149,14 @@ const App: React.FC = () => {
     }
   };
 
-  if (loading) {
+  if (loading || initializing) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-center">
         <Trophy className="text-orange-600 animate-pulse mb-8" size={64} />
         <Loader2 className="text-slate-700 animate-spin mb-4" size={24} />
-        <p className="text-slate-500 font-black uppercase tracking-widest text-[10px]">Conectando con la Legión...</p>
+        <p className="text-slate-500 font-black uppercase tracking-widest text-[10px]">
+          {initializing ? "Cargando Legión por primera vez..." : "Conectando con la Legión..."}
+        </p>
       </div>
     );
   }
