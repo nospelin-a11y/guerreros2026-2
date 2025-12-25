@@ -2,7 +2,8 @@
 import React, { useState, useMemo } from 'react';
 import { Activity, User, Workout } from '../types';
 import { DAILY_WORKOUT_LIMIT } from '../constants';
-import { isToday, parseISO } from 'date-fns';
+// Fix: Removed parseISO and used isToday from date-fns
+import { isToday } from 'date-fns';
 import { Check, AlertCircle, Dumbbell } from 'lucide-react';
 
 interface RegisterWorkoutProps {
@@ -17,7 +18,8 @@ const RegisterWorkout: React.FC<RegisterWorkoutProps> = ({ activities, user, wor
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const workoutsTodayCount = useMemo(() => 
-    workouts.filter(w => (w.userId === user.id || (w as any).user_id === user.id) && isToday(parseISO(w.date))).length,
+    // Fix: changed w.userId to w.user_id and replaced parseISO(w.date) with new Date(w.date)
+    workouts.filter(w => w.user_id === user.id && isToday(new Date(w.date))).length,
   [workouts, user.id]);
 
   const canAddMore = workoutsTodayCount < DAILY_WORKOUT_LIMIT;

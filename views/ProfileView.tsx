@@ -78,7 +78,8 @@ const ProfileView: React.FC<ProfileViewProps> = ({ user, onUpdate }) => {
         <h3 className="text-2xl font-bold text-white mb-1">{user.name}</h3>
         <p className="text-slate-500 font-bold uppercase tracking-widest text-xs mb-4">@{user.username}</p>
         
-        {user.isAdmin && (
+        {/* Fix: changed user.isAdmin to user.is_admin */}
+        {user.is_admin && (
           <div className="flex items-center gap-1.5 bg-orange-600/10 text-orange-500 px-4 py-1.5 rounded-full text-[10px] font-black uppercase mb-6 border border-orange-500/20">
             <Shield size={12} />
             Administrador

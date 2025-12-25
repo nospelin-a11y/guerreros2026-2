@@ -1,9 +1,6 @@
-
 import React, { useState } from 'react';
-import { AppState, User, Activity, Workout } from '../types';
-import { supabase } from '../services/supabase';
+import { AppState, User, Activity } from '../types';
 import { 
-  Settings, 
   Users, 
   Zap, 
   ChevronRight, 
@@ -27,54 +24,48 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdateActivities, onUp
   const [activeSection, setActiveSection] = useState<'menu' | 'points' | 'users' | 'add_user' | 'add_workout'>('menu');
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
   const [editPointValue, setEditPointValue] = useState<string>('');
-  const [isSyncing, setIsSyncing] = useState(false);
   
   const [newUser, setNewUser] = useState({ name: '', username: '', password: '' });
   const [selectedUserForWorkout, setSelectedUserForWorkout] = useState<User | null>(null);
   const [selectedActId, setSelectedActId] = useState('');
 
-  const handleUpdatePoints = async (id: string) => {
+  const handleUpdatePoints = (id: string) => {
     const points = parseFloat(editPointValue);
     if (isNaN(points)) return;
     
-    setIsSyncing(true);
-    const { error } = await supabase
-        .from('activities')
-        .update({ points })
-        .eq('id', id);
-
-    if (!error) {
-        onUpdateActivities([]); // El refresh lo maneja App.tsx llamando a fetchData
-        setEditingActivityId(null);
-    }
-    setIsSyncing(false);
+    const newActivities = state.activities.map(act => 
+      act.id === id ? { ...act, points } : act
+    );
+    onUpdateActivities(newActivities);
+    setEditingActivityId(null);
   };
 
-  const handleAddUser = async (e: React.FormEvent) => {
+  const handleAddUser = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUser.name || !newUser.username || !newUser.password) return;
     
-    setIsSyncing(true);
-    const { error } = await supabase
-        .from('users')
-        .insert([{ ...newUser, is_admin: false }]);
-
-    if (error) {
-        alert("Error al crear usuario. Posiblemente el username ya existe.");
-    } else {
-        onUpdateUsers([]); 
-        setNewUser({ name: '', username: '', password: '' });
-        setActiveSection('users');
+    const userExists = state.users.some(u => u.username === newUser.username);
+    if (userExists) {
+        alert("El nombre de usuario ya existe.");
+        return;
     }
-    setIsSyncing(false);
+
+    const createdUser: User = {
+        ...newUser,
+        id: `u-${Date.now()}`,
+        is_admin: false
+    };
+
+    onUpdateUsers([...state.users, createdUser]);
+    setNewUser({ name: '', username: '', password: '' });
+    setActiveSection('users');
   };
 
-  const handleAddExtraWorkout = async () => {
+  const handleAddExtraWorkout = () => {
     if (!selectedUserForWorkout || !selectedActId) return;
     const act = state.activities.find(a => a.id === selectedActId);
     if (!act) return;
 
-    setIsSyncing(true);
     const newWorkout = {
       user_id: selectedUserForWorkout.id,
       activity_id: act.id,
@@ -83,20 +74,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdateActivities, onUp
       date: new Date().toISOString()
     };
 
-    await onAddWorkout(newWorkout);
+    onAddWorkout(newWorkout);
     alert(`Entreno añadido a ${selectedUserForWorkout.name}`);
     setActiveSection('users');
     setSelectedUserForWorkout(null);
     setSelectedActId('');
-    setIsSyncing(false);
   };
 
-  const handleDeleteUser = async (id: string) => {
+  const handleDeleteUser = (id: string) => {
     if (confirm("¿Estás seguro de que quieres eliminar a este guerrero? Se perderán sus datos.")) {
-        setIsSyncing(true);
-        const { error } = await supabase.from('users').delete().eq('id', id);
-        if (!error) onUpdateUsers([]);
-        setIsSyncing(false);
+        onUpdateUsers(state.users.filter(u => u.id !== id));
     }
   };
 
@@ -133,8 +120,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdateActivities, onUp
               />
               <button 
                 onClick={() => handleUpdatePoints(act.id)}
-                disabled={isSyncing}
-                className="bg-orange-600 p-2 rounded-xl text-white disabled:opacity-50"
+                className="bg-orange-600 p-2 rounded-xl text-white shadow-lg"
               >
                 <Save size={18} />
               </button>
@@ -187,16 +173,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdateActivities, onUp
                </div>
              </div>
              <div className="flex items-center gap-2">
-                {!u.isAdmin && (
+                {!u.is_admin && (
                     <button 
                         onClick={() => handleDeleteUser(u.id)}
-                        disabled={isSyncing}
-                        className="p-2 bg-red-500/10 text-red-500 rounded-xl hover:bg-red-500/20 disabled:opacity-50"
+                        className="p-2 bg-red-500/10 text-red-500 rounded-xl hover:bg-red-500/20"
                     >
                         <Trash2 size={18} />
                     </button>
                 )}
-                {u.isAdmin && (
+                {u.is_admin && (
                     <div className="flex items-center gap-1 bg-orange-600/10 text-orange-500 px-3 py-1 rounded-full text-[10px] font-black uppercase">
                         <ShieldCheck size={12} />
                         ADMIN
@@ -263,10 +248,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdateActivities, onUp
         </div>
         <button 
           type="submit"
-          disabled={isSyncing}
-          className="w-full bg-orange-600 h-14 rounded-2xl text-white font-black uppercase tracking-widest mt-4 shadow-xl shadow-orange-900/20 active:scale-95 transition-all disabled:opacity-50"
+          className="w-full bg-orange-600 h-14 rounded-2xl text-white font-black uppercase tracking-widest mt-4 shadow-xl shadow-orange-900/20 active:scale-95 transition-all"
         >
-          {isSyncing ? 'CREANDO...' : 'CREAR GUERRERO'}
+          CREAR GUERRERO
         </button>
       </form>
     </div>
@@ -308,12 +292,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdateActivities, onUp
 
         <button 
           onClick={handleAddExtraWorkout}
-          disabled={!selectedActId || isSyncing}
+          disabled={!selectedActId}
           className={`w-full h-14 rounded-2xl font-black uppercase tracking-widest mt-4 shadow-xl transition-all ${
             selectedActId ? 'bg-orange-600 text-white shadow-orange-900/20 active:scale-95' : 'bg-slate-800 text-slate-600'
-          } disabled:opacity-50`}
+          }`}
         >
-          {isSyncing ? 'CONFIRMANDO...' : 'CONFIRMAR ENTRENO'}
+          CONFIRMAR ENTRENO
         </button>
       </div>
     </div>

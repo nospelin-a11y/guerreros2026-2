@@ -1,0 +1,5 @@
+{
+  "version": "1.2.0-local",
+  "description": "Versión funcional con LocalStorage, sin errores de importmap y lógica de administrador completa.",
+  "timestamp": "2025-05-20T12:00:00Z"
+}

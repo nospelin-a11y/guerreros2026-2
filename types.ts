@@ -3,7 +3,7 @@ export type ActivityType = 'Crossfit' | 'Correr' | 'Musculación' | 'Bicicleta' 
 
 export interface Activity {
   id: string;
-  name: ActivityType;
+  name: string;
   points: number;
 }
 
@@ -12,16 +12,16 @@ export interface User {
   name: string;
   username: string;
   password?: string;
-  isAdmin: boolean;
+  is_admin: boolean; // Coincide con Supabase
   avatar?: string;
 }
 
 export interface Workout {
   id: string;
-  userId: string;
-  activityId: string;
-  activityName: string;
-  date: string; // ISO string
+  user_id: string;      // Coincide con Supabase
+  activity_id: string;  // Coincide con Supabase
+  activity_name: string; // Coincide con Supabase
+  date: string; 
   points: number;
   notes?: string;
 }
