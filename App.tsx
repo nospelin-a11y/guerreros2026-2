@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { User, Workout, Activity, AppState } from './types';
-import { loadState, saveState } from './services/storage';
+import { supabase } from './services/supabase';
 import Layout from './components/Layout';
 import Dashboard from './views/Dashboard';
 import Ranking from './views/Ranking';
@@ -9,38 +9,50 @@ import HistoryView from './views/HistoryView';
 import AdminPanel from './views/AdminPanel';
 import Login from './views/Login';
 import ProfileView from './views/ProfileView';
-import { Trophy } from 'lucide-react';
+import { Loader2, Trophy } from 'lucide-react';
 
 const App: React.FC = () => {
-  const [state, setState] = useState<AppState>(loadState());
+  const [state, setState] = useState<AppState>({ users: [], workouts: [], activities: [] });
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [initialized, setInitialized] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  // Cargar sesión persistida al iniciar
+  // Función para cargar todos los datos de Supabase
+  const fetchData = async () => {
+    try {
+      const { data: users } = await supabase.from('users').select('*');
+      const { data: activities } = await supabase.from('activities').select('*').order('name');
+      const { data: workouts } = await supabase.from('workouts').select('*').order('date', { ascending: false });
+
+      setState({
+        users: users || [],
+        activities: activities || [],
+        workouts: workouts || []
+      });
+    } catch (error) {
+      console.error("Error cargando datos de Supabase:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const savedSession = localStorage.getItem('guerreros_session');
-    if (savedSession) {
+    fetchData();
+  }, []);
+
+  // Manejo de sesión local persistente
+  useEffect(() => {
+    const savedUser = localStorage.getItem('guerreros_session');
+    if (savedUser && state.users.length > 0) {
       try {
-        const parsedUser = JSON.parse(savedSession);
-        // Verificar que el usuario aún existe en el estado
-        const userExists = state.users.find(u => u.id === parsedUser.id);
-        if (userExists) {
-          setCurrentUser(userExists);
-        }
+        const parsed = JSON.parse(savedUser);
+        const actualUser = state.users.find(u => u.id === parsed.id);
+        if (actualUser) setCurrentUser(actualUser);
       } catch (e) {
         localStorage.removeItem('guerreros_session');
       }
     }
-    setInitialized(true);
   }, [state.users]);
-
-  // Guardar estado en localStorage cada vez que cambie
-  useEffect(() => {
-    if (initialized) {
-      saveState(state);
-    }
-  }, [state, initialized]);
 
   const handleLogin = (user: User) => {
     setCurrentUser(user);
@@ -53,48 +65,59 @@ const App: React.FC = () => {
     setActiveTab('dashboard');
   };
 
-  const addWorkout = (workout: any) => {
-    const newWorkout: Workout = {
-      ...workout,
-      id: `w-${Date.now()}`
-    };
-    
-    setState(prev => ({
-      ...prev,
-      workouts: [newWorkout, ...prev.workouts]
-    }));
-    setActiveTab('dashboard');
+  const addWorkout = async (workout: any) => {
+    const { data, error } = await supabase
+      .from('workouts')
+      .insert([workout])
+      .select();
+
+    if (!error && data) {
+      setState(prev => ({
+        ...prev,
+        workouts: [data[0], ...prev.workouts]
+      }));
+      setActiveTab('dashboard');
+    } else {
+      console.error("Error insertando entreno:", error);
+      alert("Error al guardar en la nube");
+    }
   };
 
-  const deleteWorkout = (id: string) => {
-    setState(prev => ({
-      ...prev,
-      workouts: prev.workouts.filter(w => w.id !== id)
-    }));
+  const deleteWorkout = async (id: string) => {
+    const { error } = await supabase.from('workouts').delete().eq('id', id);
+    if (!error) {
+      setState(prev => ({
+        ...prev,
+        workouts: prev.workouts.filter(w => w.id !== id)
+      }));
+    }
   };
 
-  const updateProfile = (updatedUser: User) => {
-    setState(prev => ({
-      ...prev,
-      users: prev.users.map(u => u.id === updatedUser.id ? updatedUser : u)
-    }));
-    setCurrentUser(updatedUser);
-    localStorage.setItem('guerreros_session', JSON.stringify(updatedUser));
+  const updateProfile = async (updatedUser: User) => {
+    const { error } = await supabase
+      .from('users')
+      .update({ 
+        avatar: updatedUser.avatar, 
+        password: updatedUser.password 
+      })
+      .eq('id', updatedUser.id);
+
+    if (!error) {
+      setState(prev => ({
+        ...prev,
+        users: prev.users.map(u => u.id === updatedUser.id ? updatedUser : u)
+      }));
+      setCurrentUser(updatedUser);
+      localStorage.setItem('guerreros_session', JSON.stringify(updatedUser));
+    }
   };
 
-  const updateActivities = (activities: Activity[]) => {
-    setState(prev => ({ ...prev, activities }));
-  };
-
-  const updateUsers = (users: User[]) => {
-    setState(prev => ({ ...prev, users }));
-  };
-
-  if (!initialized) {
+  if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center">
-        <Trophy className="text-orange-600 animate-pulse mb-4" size={48} />
-        <p className="text-slate-500 font-bold uppercase tracking-widest text-[10px]">Iniciando Legión...</p>
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-center">
+        <Trophy className="text-orange-600 animate-pulse mb-8" size={64} />
+        <Loader2 className="text-slate-700 animate-spin mb-4" size={24} />
+        <p className="text-slate-500 font-black uppercase tracking-widest text-[10px]">Conectando con la Legión...</p>
       </div>
     );
   }
@@ -117,7 +140,7 @@ const App: React.FC = () => {
           activities={state.activities} 
           user={currentUser} 
           workouts={state.workouts} 
-          onAdd={async (w) => addWorkout(w)} 
+          onAdd={addWorkout} 
         />
       )}
       {activeTab === 'history' && (
@@ -131,8 +154,8 @@ const App: React.FC = () => {
       {activeTab === 'admin' && currentUser.is_admin && (
         <AdminPanel 
           state={state} 
-          onUpdateActivities={updateActivities} 
-          onUpdateUsers={updateUsers} 
+          onUpdateActivities={fetchData} 
+          onUpdateUsers={fetchData} 
           onAddWorkout={addWorkout} 
         />
       )}
