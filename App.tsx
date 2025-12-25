@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { User, Workout, Activity, AppState } from './types';
-import { supabase } from './services/supabase';
-import { INITIAL_USERS, INITIAL_ACTIVITIES } from './constants';
+import { loadState, saveState } from './services/storage';
 import Layout from './components/Layout';
 import Dashboard from './views/Dashboard';
 import Ranking from './views/Ranking';
@@ -10,85 +9,35 @@ import HistoryView from './views/HistoryView';
 import AdminPanel from './views/AdminPanel';
 import Login from './views/Login';
 import ProfileView from './views/ProfileView';
-import { Loader2, Trophy } from 'lucide-react';
+import { Trophy } from 'lucide-react';
 
 const App: React.FC = () => {
-  const [state, setState] = useState<AppState>({ users: [], workouts: [], activities: [] });
+  const [state, setState] = useState<AppState>(loadState());
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [loading, setLoading] = useState(true);
-  const [initializing, setInitializing] = useState(false);
 
-  // Función para poblar la base de datos si está vacía
-  const initializeDatabase = async (currentUsers: any[], currentActivities: any[]) => {
-    if (currentUsers.length === 0 || currentActivities.length === 0) {
-      setInitializing(true);
-      console.log("Detectada base de datos vacía. Iniciando carga automática...");
-      
-      try {
-        if (currentUsers.length === 0) {
-          await supabase.from('users').insert(INITIAL_USERS);
-        }
-        if (currentActivities.length === 0) {
-          await supabase.from('activities').insert(INITIAL_ACTIVITIES);
-        }
-        // Recargar después de insertar
-        await fetchData();
-      } catch (err) {
-        console.error("Error en inicialización:", err);
-      } finally {
-        setInitializing(false);
-      }
-    }
-  };
-
-  const fetchData = async () => {
-    try {
-      const { data: users } = await supabase.from('users').select('*');
-      const { data: activities } = await supabase.from('activities').select('*').order('name');
-      const { data: workouts } = await supabase.from('workouts').select('*').order('date', { ascending: false });
-
-      const fetchedUsers = users || [];
-      const fetchedActivities = activities || [];
-      
-      setState({
-        users: fetchedUsers,
-        activities: fetchedActivities,
-        workouts: workouts || []
-      });
-
-      return { users: fetchedUsers, activities: fetchedActivities };
-    } catch (error) {
-      console.error("Error cargando datos de Supabase:", error);
-      return { users: [], activities: [] };
-    }
-  };
-
+  // Efecto para persistir cambios automáticamente
   useEffect(() => {
-    const startApp = async () => {
-      setLoading(true);
-      const data = await fetchData();
-      // Si no hay datos, intentamos inicializar
-      if (data.users.length === 0 || data.activities.length === 0) {
-        await initializeDatabase(data.users, data.activities);
+    saveState(state);
+  }, [state]);
+
+  // Manejo de carga inicial y sesión
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const savedUser = localStorage.getItem('guerreros_session');
+      if (savedUser) {
+        try {
+          const parsed = JSON.parse(savedUser);
+          const actualUser = state.users.find(u => u.id === parsed.id);
+          if (actualUser) setCurrentUser(actualUser);
+        } catch (e) {
+          localStorage.removeItem('guerreros_session');
+        }
       }
       setLoading(false);
-    };
-    startApp();
-  }, []);
-
-  // Manejo de sesión local persistente
-  useEffect(() => {
-    const savedUser = localStorage.getItem('guerreros_session');
-    if (savedUser && state.users.length > 0) {
-      try {
-        const parsed = JSON.parse(savedUser);
-        const actualUser = state.users.find(u => u.id === parsed.id);
-        if (actualUser) setCurrentUser(actualUser);
-      } catch (e) {
-        localStorage.removeItem('guerreros_session');
-      }
-    }
+    }, 1000);
+    return () => clearTimeout(timer);
   }, [state.users]);
 
   const handleLogin = (user: User) => {
@@ -103,60 +52,48 @@ const App: React.FC = () => {
   };
 
   const addWorkout = async (workout: any) => {
-    const { data, error } = await supabase
-      .from('workouts')
-      .insert([workout])
-      .select();
-
-    if (!error && data) {
-      setState(prev => ({
-        ...prev,
-        workouts: [data[0], ...prev.workouts]
-      }));
-      setActiveTab('dashboard');
-    } else {
-      console.error("Error insertando entreno:", error);
-      alert("Error al guardar en la nube. Revisa las políticas RLS en Supabase.");
-    }
+    const workoutWithId: Workout = {
+      ...workout,
+      id: `w-${Date.now()}`
+    };
+    
+    setState(prev => ({
+      ...prev,
+      workouts: [workoutWithId, ...prev.workouts]
+    }));
+    setActiveTab('dashboard');
   };
 
-  const deleteWorkout = async (id: string) => {
-    const { error } = await supabase.from('workouts').delete().eq('id', id);
-    if (!error) {
-      setState(prev => ({
-        ...prev,
-        workouts: prev.workouts.filter(w => w.id !== id)
-      }));
-    }
+  const deleteWorkout = (id: string) => {
+    setState(prev => ({
+      ...prev,
+      workouts: prev.workouts.filter(w => w.id !== id)
+    }));
   };
 
-  const updateProfile = async (updatedUser: User) => {
-    const { error } = await supabase
-      .from('users')
-      .update({ 
-        avatar: updatedUser.avatar, 
-        password: updatedUser.password 
-      })
-      .eq('id', updatedUser.id);
-
-    if (!error) {
-      setState(prev => ({
-        ...prev,
-        users: prev.users.map(u => u.id === updatedUser.id ? updatedUser : u)
-      }));
-      setCurrentUser(updatedUser);
-      localStorage.setItem('guerreros_session', JSON.stringify(updatedUser));
-    }
+  const updateProfile = (updatedUser: User) => {
+    setState(prev => ({
+      ...prev,
+      users: prev.users.map(u => u.id === updatedUser.id ? updatedUser : u)
+    }));
+    setCurrentUser(updatedUser);
+    localStorage.setItem('guerreros_session', JSON.stringify(updatedUser));
   };
 
-  if (loading || initializing) {
+  // Funciones administrativas locales
+  const updateActivities = (activities: Activity[]) => {
+    setState(prev => ({ ...prev, activities }));
+  };
+
+  const updateUsers = (users: User[]) => {
+    setState(prev => ({ ...prev, users }));
+  };
+
+  if (loading) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-center">
         <Trophy className="text-orange-600 animate-pulse mb-8" size={64} />
-        <Loader2 className="text-slate-700 animate-spin mb-4" size={24} />
-        <p className="text-slate-500 font-black uppercase tracking-widest text-[10px]">
-          {initializing ? "Cargando Legión por primera vez..." : "Conectando con la Legión..."}
-        </p>
+        <p className="text-slate-500 font-black uppercase tracking-widest text-[10px]">Cargando Legión...</p>
       </div>
     );
   }
@@ -193,8 +130,8 @@ const App: React.FC = () => {
       {activeTab === 'admin' && currentUser.is_admin && (
         <AdminPanel 
           state={state} 
-          onUpdateActivities={fetchData} 
-          onUpdateUsers={fetchData} 
+          onUpdateActivities={(acts) => updateActivities(acts as any)} 
+          onUpdateUsers={(usrs) => updateUsers(usrs as any)} 
           onAddWorkout={addWorkout} 
         />
       )}

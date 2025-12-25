@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { AppState, User, Activity } from '../types';
-import { supabase } from '../services/supabase';
 import { 
   Users, 
   Zap, 
@@ -10,14 +9,13 @@ import {
   ShieldCheck,
   Edit2,
   Trash2,
-  Dumbbell,
   Plus
 } from 'lucide-react';
 
 interface AdminPanelProps {
   state: AppState;
-  onUpdateActivities: () => void;
-  onUpdateUsers: () => void;
+  onUpdateActivities: (activities: Activity[]) => void;
+  onUpdateUsers: (users: User[]) => void;
   onAddWorkout: (workout: any) => Promise<void>;
 }
 
@@ -30,42 +28,33 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdateActivities, onUp
   const [selectedUserForWorkout, setSelectedUserForWorkout] = useState<User | null>(null);
   const [selectedActId, setSelectedActId] = useState('');
 
-  const handleUpdatePoints = async (id: string) => {
+  const handleUpdatePoints = (id: string) => {
     const points = parseFloat(editPointValue);
     if (isNaN(points)) return;
     
-    const { error } = await supabase
-      .from('activities')
-      .update({ points })
-      .eq('id', id);
-
-    if (!error) {
-      onUpdateActivities();
-      setEditingActivityId(null);
-    }
+    const newActivities = state.activities.map(act => 
+      act.id === id ? { ...act, points } : act
+    );
+    
+    onUpdateActivities(newActivities);
+    setEditingActivityId(null);
   };
 
-  const handleAddUser = async (e: React.FormEvent) => {
+  const handleAddUser = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUser.name || !newUser.username || !newUser.password) return;
     
-    const { error } = await supabase
-      .from('users')
-      .insert([{
-        id: `u-${Date.now()}`,
-        name: newUser.name,
-        username: newUser.username,
-        password: newUser.password,
-        is_admin: false
-      }]);
+    const createdUser: User = {
+      id: `u-${Date.now()}`,
+      name: newUser.name,
+      username: newUser.username,
+      password: newUser.password,
+      is_admin: false
+    };
 
-    if (!error) {
-      onUpdateUsers();
-      setNewUser({ name: '', username: '', password: '' });
-      setActiveSection('users');
-    } else {
-      alert("Error al crear usuario: " + error.message);
-    }
+    onUpdateUsers([...state.users, createdUser]);
+    setNewUser({ name: '', username: '', password: '' });
+    setActiveSection('users');
   };
 
   const handleAddExtraWorkout = async () => {
@@ -82,22 +71,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ state, onUpdateActivities, onUp
     };
 
     await onAddWorkout(newWorkout);
-    alert(`Entreno añadido a ${selectedUserForWorkout.name}`);
     setActiveSection('users');
     setSelectedUserForWorkout(null);
     setSelectedActId('');
   };
 
-  const handleDeleteUser = async (id: string) => {
+  const handleDeleteUser = (id: string) => {
     if (confirm("¿Estás seguro de que quieres eliminar a este guerrero?")) {
-      const { error } = await supabase.from('users').delete().eq('id', id);
-      if (!error) onUpdateUsers();
+      onUpdateUsers(state.users.filter(u => u.id !== id));
     }
   };
 
-  // ... (Resto de funciones de renderizado se mantienen igual que la versión anterior)
-  // Nota: El renderizado de UI es idéntico a la versión estable de backup pero consumiendo los datos actualizados.
-  
   const renderPoints = () => (
     <div className="space-y-4">
       <div className="flex items-center gap-2 mb-4">
