@@ -1,0 +1,7 @@
+{
+  "name": "Guerreros 2026",
+  "description": "Una aplicación de seguimiento de entrenamientos premium para la comunidad Guerreros, con ranking en tiempo real y gestión administrativa.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
