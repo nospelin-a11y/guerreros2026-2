@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { AppState, User, Activity, Workout } from '../types';
 import { supabase } from '../services/supabase';
@@ -39,13 +40,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   const [editPointValue, setEditPointValue] = useState<string>('');
   const [loading, setLoading] = useState(false);
   
-  // States for new items
   const [newUser, setNewUser] = useState({ name: '', username: '', password: '' });
   const [newActivity, setNewActivity] = useState({ name: '', points: '' });
   
-  // Management states
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [selectedActId, setSelectedActId] = useState('');
+
+  // Formateador para puntos
+  const formatPoints = (p: number) => Number(p.toFixed(2));
 
   const handleUpdatePoints = async (id: string) => {
     const points = parseFloat(editPointValue);
@@ -186,7 +188,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
           ) : (
             <div className="flex items-center gap-4">
-              <span className="font-black text-slate-200 text-sm">{act.points} pts</span>
+              <span className="font-black text-slate-200 text-sm">{formatPoints(act.points)} pts</span>
               <button 
                 onClick={() => { setEditingActivityId(act.id); setEditPointValue(act.points.toString()); }}
                 className="text-slate-600 hover:text-orange-500 transition-colors"
@@ -321,7 +323,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                 </div>
               </div>
               <div className="flex items-center gap-4">
-                <span className="text-xs font-black text-orange-500">+{w.points} pts</span>
+                <span className="text-xs font-black text-orange-500">+{formatPoints(w.points)} pts</span>
                 <button 
                   onClick={() => handleDeleteWorkout(w.id)}
                   disabled={loading}

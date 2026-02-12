@@ -10,9 +10,7 @@ import {
   Clock,
   User as UserIcon
 } from 'lucide-react';
-// Fix: Use new Date() instead of parseISO to avoid import resolution issues in some environments
 import { format, isToday } from 'date-fns';
-// Fix: Import locale from specific path to avoid missing member errors from the root locale index
 import { es } from 'date-fns/locale/es';
 
 interface DashboardProps {
@@ -44,11 +42,13 @@ const Dashboard: React.FC<DashboardProps> = ({ state, user, setActiveTab }) => {
   }, [users, workouts, user.id]);
 
   const workoutsTodayCount = useMemo(() => 
-    // Fix: replaced parseISO(w.date) with new Date(w.date)
     userWorkouts.filter(w => isToday(new Date(w.date))).length,
   [userWorkouts]);
 
   const lastWorkouts = userWorkouts.slice(0, 3);
+
+  // Formateador para puntos
+  const formatPoints = (p: number) => Number(p.toFixed(2));
 
   return (
     <div className="space-y-6">
@@ -73,7 +73,7 @@ const Dashboard: React.FC<DashboardProps> = ({ state, user, setActiveTab }) => {
           <div className="w-12 h-12 rounded-2xl bg-orange-600 flex items-center justify-center mb-3 shadow-lg shadow-orange-900/20">
             <Flame className="text-white" size={24} />
           </div>
-          <span className="text-3xl font-black text-white">{totalPoints}</span>
+          <span className="text-3xl font-black text-white">{formatPoints(totalPoints)}</span>
           <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">Puntos Totales</span>
         </div>
         
@@ -128,12 +128,11 @@ const Dashboard: React.FC<DashboardProps> = ({ state, user, setActiveTab }) => {
                   <h4 className="font-bold text-slate-200 text-sm uppercase">{w.activity_name}</h4>
                   <div className="flex items-center gap-2 text-[10px] text-slate-500 font-bold uppercase">
                     <Clock size={12} />
-                    {/* Fix: replaced parseISO(w.date) with new Date(w.date) */}
                     {format(new Date(w.date), "d MMM, HH:mm", { locale: es })}
                   </div>
                 </div>
               </div>
-              <div className="text-orange-500 font-black">+{w.points}</div>
+              <div className="text-orange-500 font-black">+{formatPoints(w.points)}</div>
             </div>
           )) : (
             <div className="glass rounded-3xl p-8 text-center border-dashed border-2 border-slate-800">

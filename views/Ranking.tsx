@@ -17,6 +17,9 @@ const Ranking: React.FC<RankingProps> = ({ state }) => {
     })).sort((a, b) => b.totalPoints - a.totalPoints);
   }, [state.users, state.workouts]);
 
+  // Formateador para puntos con máximo 2 decimales
+  const formatPoints = (p: number) => Number(p.toFixed(2));
+
   return (
     <div className="space-y-6">
       <div className="text-center mb-6 pt-4">
@@ -62,7 +65,7 @@ const Ranking: React.FC<RankingProps> = ({ state }) => {
 
               <div className="flex flex-col items-end">
                 <span className={`font-black text-lg ${idx === 0 ? 'text-orange-500' : 'text-slate-200'}`}>
-                  {u.totalPoints}
+                  {formatPoints(u.totalPoints)}
                 </span>
                 <span className="text-slate-600 text-[9px] font-bold uppercase tracking-widest">Puntos</span>
               </div>

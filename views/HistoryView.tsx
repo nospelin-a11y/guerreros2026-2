@@ -1,9 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { AppState, User, Workout } from '../types';
-// Fix: Use new Date() instead of parseISO to ensure compatibility
 import { format } from 'date-fns';
-// Fix: Import locale from specific path to avoid missing member errors
 import { es } from 'date-fns/locale/es';
 import { Trash2, Filter, History as HistoryIcon } from 'lucide-react';
 
@@ -25,6 +23,9 @@ const HistoryView: React.FC<HistoryViewProps> = ({ state, user, onDelete }) => {
   }, [state.workouts, filterUserId]);
 
   const getUserName = (id: string) => state.users.find(u => u.id === id)?.name || 'Desconocido';
+
+  // Formateador para puntos
+  const formatPoints = (p: number) => Number(p.toFixed(2));
 
   return (
     <div className="space-y-6 pb-4">
@@ -56,12 +57,11 @@ const HistoryView: React.FC<HistoryViewProps> = ({ state, user, onDelete }) => {
               <div>
                 <h4 className="font-black text-slate-100 uppercase tracking-wide text-sm">{w.activity_name}</h4>
                 <p className="text-[10px] text-slate-500 font-bold mb-2 uppercase tracking-widest">
-                  {/* Fix: replaced parseISO(w.date) with new Date(w.date) */}
                   {format(new Date(w.date), "EEEE d 'de' MMMM, HH:mm", { locale: es })}
                 </p>
               </div>
               <div className="flex flex-col items-end">
-                <span className="text-xl font-black text-orange-500">+{w.points}</span>
+                <span className="text-xl font-black text-orange-500">+{formatPoints(w.points)}</span>
                 {user.is_admin && onDelete && (
                   <button 
                     onClick={() => { if(confirm('¿Seguro que deseas eliminar este registro?')) onDelete(w.id); }}
